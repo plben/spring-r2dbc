@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>net.benpl</groupId>
+    <artifactId>r2dbc</artifactId>
+    <version>1.0</version>
+
+    <packaging>jar</packaging>
+
+    <properties>
+        <skipTests>true</skipTests>
+
+        <java.version>1.8</java.version>
+        <maven.compiler.source>${java.version}</maven.compiler.source>
+        <maven.compiler.target>${java.version}</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <spring-data-r2dbc.version>1.0.0.RC1</spring-data-r2dbc.version>
+        <r2dbc-mysql.version>0.8.0.RC2</r2dbc-mysql.version>
+        <lombok.version>1.18.8</lombok.version>
+
+        <proguard-maven-plugin.version>2.1.0</proguard-maven-plugin.version>
+        <proguard-base.version>6.1.1</proguard-base.version>
+        <maven-source-plugin.version>3.1.0</maven-source-plugin.version>
+    </properties>
+
+    <repositories>
+        <repository>
+            <id>jboss-public-repository</id>
+            <name>JBoss Public Repository</name>
+            <url>https://repository.jboss.org/nexus/content/repositories/public/</url>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+
+        <repository>
+            <id>spring-libs-milestone</id>
+            <name>Spring Milestone Repository</name>
+            <url>https://repo.spring.io/libs-milestone</url>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+
+    </repositories>
+
+    <dependencies>
+        <!-- R2DBC -->
+        <!-- R2DBC: Spring R2DBC -->
+        <dependency>
+            <groupId>org.springframework.data</groupId>
+            <artifactId>spring-data-r2dbc</artifactId>
+            <version>${spring-data-r2dbc.version}</version>
+        </dependency>
+
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>${lombok.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- ProGuard -->
+            <plugin>
+                <groupId>com.github.wvengen</groupId>
+                <artifactId>proguard-maven-plugin</artifactId>
+                <version>${proguard-maven-plugin.version}</version>
+
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>proguard</goal>
+                        </goals>
+                    </execution>
+                </executions>
+
+                <configuration>
+                    <addMavenDescriptor>false</addMavenDescriptor>
+                    <options>
+                        <option>-verbose</option>
+
+                        <!-- JDK目标版本1.8 -->
+                        <option>-target 1.8</option>
+
+                        <!-- !!!For AspectJ!!! -->
+                        <!-- Keep the parameter names and types of methods -->
+                        <!-- <option>-keepparameternames</option> -->
+
+                        <option>-keepattributes SourceFile,LineNumberTable</option>
+                        <option>-keepattributes Signature</option>
+                        <option>-keepattributes *Annotation*,Signature</option>
+                        <option>-keepattributes Exceptions</option>
+                        <option>-keepattributes InnerClasses,EnclosingMethod</option>
+
+                        <option>-keep class net.benpl.r2dbc.R2dbc { *; }</option>
+                        <option>-keep class net.benpl.r2dbc.Type { *; }</option>
+                        <option>-keep class net.benpl.r2dbc.annotation.* { *; }</option>
+                        <option>-keep class net.benpl.r2dbc.exception.* { *; }</option>
+                        <option>-keepnames class net.benpl.r2dbc.support.Mysql</option>
+                        <option>-keepnames class net.benpl.r2dbc.support.Mssql</option>
+                        <option>-keepnames class net.benpl.r2dbc.support.H2</option>
+                        <option>-keepnames class net.benpl.r2dbc.support.Postgres</option>
+                    </options>
+                    <libs>
+                        <lib>${java.home}/lib/rt.jar</lib>
+                        <lib>${java.home}/lib/ext/jfxrt.jar</lib>
+                    </libs>
+                </configuration>
+
+                <dependencies>
+                    <dependency>
+                        <groupId>net.sf.proguard</groupId>
+                        <artifactId>proguard-base</artifactId>
+                        <version>${proguard-base.version}</version>
+                    </dependency>
+                </dependencies>
+            </plugin>
+
+            <!-- Source Code Packaging -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+                <version>${maven-source-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>attach-sources</id>
+                        <goals>
+                            <goal>jar-no-fork</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
