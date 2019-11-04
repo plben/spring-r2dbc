@@ -1,3 +1,25 @@
+/*
+ * Copyright © 2019 Ben Peng
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the “Software”), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+
 package net.benpl.r2dbc.support;
 
 import javafx.util.Pair;
@@ -12,10 +34,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.lang.reflect.Field;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -31,14 +50,14 @@ abstract class Abstract implements R2dbc {
     public <T> Mono<Long> count(Class<T> clazz) {
         TableInfo<T> tableInfo = TableInfo.of(clazz);
         return execute0("SELECT COUNT(*) FROM `" + tableInfo.tableName + "`")
-                .map(row -> (Long) row.get(0))
+                .map(row -> ((Number) Objects.requireNonNull(row.get(0))).longValue())
                 .first();
     }
 
     @Override
     public <T> Mono<Boolean> existsById(Class<T> clazz, @NonNull Object id) {
         return byId("SELECT EXISTS(SELECT *", ")", clazz, id)
-                .map(row -> (Long) row.get(0) == 1)
+                .map(row -> ((Number) Objects.requireNonNull(row.get(0))).intValue() == 1)
                 .first();
     }
 
@@ -50,8 +69,9 @@ abstract class Abstract implements R2dbc {
             if (tableInfo.aiField != null) {
                 return insertSpec(tableInfo, entity)
                         .map(row -> {
-                            Object value = tableInfo.aiValueFrom((Long) row.get(0));
-                            return tableInfo.setFieldValue(entity, tableInfo.aiField, value);
+                            Object value = tableInfo.aiValueFrom((Number) row.get(0));
+                            Utils.setFieldValue(entity, tableInfo.aiField, value);
+                            return entity;
                         })
                         .first();
             } else {
@@ -85,16 +105,30 @@ abstract class Abstract implements R2dbc {
     public <T> Mono<Boolean> delete(@NonNull T entity) {
         TableInfo<T> tableInfo = TableInfo.of(entity);
 
-        List<String> allKeys = tableInfo.allKeys;
+        Collection<String> keys = tableInfo.allKeys;
         Map<String, Field> allFields = tableInfo.allFields;
 
-        // (x = ? AND y AND ?, ...)
-        String clauseStr = allKeys.stream()
-                .map(key -> "`" + key + "` = ?")
-                .collect(Collectors.joining(" AND "));
-        List<Object> params = allKeys.stream()
-                .map(allFields::get)
-                .collect(Collectors.toList());
+        String clauseStr;
+        List<Object> params;
+
+        if (keys.size() > 0) {
+            // (x = ? AND y = ? , ...)
+            clauseStr = keys.stream()
+                    .map(key -> "`" + key + "` = ?")
+                    .collect(Collectors.joining(" AND "));
+            params = keys.stream()
+                    .map(key -> Utils.getFieldValue(entity, allFields.get(key)))
+                    .collect(Collectors.toList());
+        } else {
+            keys = allFields.keySet();
+            // (x = ? AND y = ? , ...)
+            clauseStr = keys.stream()
+                    .map(key -> "`" + key + "` = ?")
+                    .collect(Collectors.joining(" AND "));
+            params = keys.stream()
+                    .map(key -> Utils.getFieldValue(entity, allFields.get(key)))
+                    .collect(Collectors.toList());
+        }
 
         String sql = "DELETE FROM `" + tableInfo.tableName + "` WHERE " + clauseStr;
 
@@ -114,22 +148,35 @@ abstract class Abstract implements R2dbc {
         String clauseStr;
         List<Object> params;
 
-        if (allKeys.size() == 1) {
+        if (allKeys.size() == 0) {
+            // (x = ? AND y = ? , ...)
+            String valueStr = allFields.keySet().stream()
+                    .map(key -> "`" + key + "` = ?")
+                    .collect(Collectors.joining(" AND ", "(", ")"));
+            // (x = ? AND y = ? , ...) OR (x = ? AND y = ? , ...) OR ...
+            clauseStr = String.join(" OR ", Collections.nCopies(entities.size(), valueStr));
+            params = entities.stream()
+                    .flatMap(entity -> allFields.keySet().stream()
+                            .map(key -> Utils.getFieldValue(entity, allFields.get(key)))
+                            .collect(Collectors.toList())
+                            .stream())
+                    .collect(Collectors.toList());
+        } else if (allKeys.size() == 1) {
             String key = allKeys.get(0);
             clauseStr = key + " IN (" + String.join(", ", Collections.nCopies(entities.size(), "?")) + ")";
             params = entities.stream()
-                    .map(entity -> tableInfo.getFieldValue(entity, allFields.get(key)))
+                    .map(entity -> Utils.getFieldValue(entity, allFields.get(key)))
                     .collect(Collectors.toList());
         } else {
-            // (x = ? AND y AND ?, ...)
+            // (x = ? AND y = ? , ...)
             String valueStr = allKeys.stream()
                     .map(key -> "`" + key + "` = ?")
                     .collect(Collectors.joining(" AND ", "(", ")"));
-            // (x = ? AND y AND ?, ...) OR (x = ? AND y AND ?, ...) OR ...
+            // (x = ? AND y = ? , ...) OR (x = ? AND y = ? , ...) OR ...
             clauseStr = String.join(" OR ", Collections.nCopies(entities.size(), valueStr));
             params = entities.stream()
                     .flatMap(entity -> allKeys.stream()
-                            .map(key -> tableInfo.getFieldValue(entity, allFields.get(key)))
+                            .map(key -> Utils.getFieldValue(entity, allFields.get(key)))
                             .collect(Collectors.toList())
                             .stream())
                     .collect(Collectors.toList());
@@ -239,7 +286,7 @@ abstract class Abstract implements R2dbc {
         for (String key : tableInfo.allFields.keySet()) {
             Field field = tableInfo.allFields.get(key);
             Column column = tableInfo.allColumns.get(key);
-            Object value = tableInfo.getFieldValue(entity, field);
+            Object value = Utils.getFieldValue(entity, field);
 
             if (value == null) {
                 if (column.nullable()) {
@@ -265,7 +312,7 @@ abstract class Abstract implements R2dbc {
 
         for (String key : nonKeys) {
             Field field = tableInfo.allFields.get(key);
-            Object value = tableInfo.getFieldValue(entity, field);
+            Object value = Utils.getFieldValue(entity, field);
 
             if (value == null) {
                 update = (update == null) ? Update.update(key, null) : update.set(key, null);
@@ -277,7 +324,7 @@ abstract class Abstract implements R2dbc {
         Criteria criteria = null;
 
         for (String key : tableInfo.allKeys) {
-            Object value = tableInfo.getFieldValue(entity, tableInfo.allFields.get(key));
+            Object value = Utils.getFieldValue(entity, tableInfo.allFields.get(key));
             criteria = criteria == null ? Criteria.where(key).is(value) : criteria.and(key).is(value);
         }
 

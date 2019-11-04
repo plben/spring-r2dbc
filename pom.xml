@@ -5,26 +5,58 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>net.benpl</groupId>
-    <artifactId>r2dbc</artifactId>
+    <artifactId>spring-r2dbc</artifactId>
     <version>1.0</version>
 
     <packaging>jar</packaging>
 
-    <properties>
-        <skipTests>true</skipTests>
+    <name>net.benpl:spring-r2dbc</name>
 
+    <description>R2dbc Client beyond spring-data-r2dbc</description>
+
+    <url>https://github.com/benpl/spring-r2dbc/</url>
+
+    <licenses>
+        <license>
+            <name>MIT License</name>
+            <url>https://opensource.org/licenses/MIT</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <name>Ben Peng</name>
+            <email>pl_ben@hotmail.com</email>
+        </developer>
+    </developers>
+
+    <scm>
+        <url>https://github.com/benpl/spring-r2dbc/</url>
+        <connection>scm:git:git://github.com/benpl/spring-r2dbc.git</connection>
+        <developerConnection>scm:git:git@github.com:benpl/spring-r2dbc.git</developerConnection>
+    </scm>
+
+    <issueManagement>
+        <system>GitHub</system>
+        <url>https://github.com/benpl/spring-r2dbc/issues</url>
+    </issueManagement>
+
+    <distributionManagement>
+        <repository>
+            <id>ossrh</id>
+            <url>https://oss.sonatype.org/service/local/staging/deploy/maven2</url>
+        </repository>
+    </distributionManagement>
+
+    <properties>
         <java.version>1.8</java.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <spring-data-r2dbc.version>1.0.0.RC1</spring-data-r2dbc.version>
-        <r2dbc-mysql.version>0.8.0.RC2</r2dbc-mysql.version>
         <lombok.version>1.18.8</lombok.version>
-
-        <proguard-maven-plugin.version>2.1.0</proguard-maven-plugin.version>
-        <proguard-base.version>6.1.1</proguard-base.version>
-        <maven-source-plugin.version>3.1.0</maven-source-plugin.version>
     </properties>
 
     <repositories>
@@ -49,8 +81,7 @@
     </repositories>
 
     <dependencies>
-        <!-- R2DBC -->
-        <!-- R2DBC: Spring R2DBC -->
+        <!-- Spring R2DBC -->
         <dependency>
             <groupId>org.springframework.data</groupId>
             <artifactId>spring-data-r2dbc</artifactId>
@@ -69,68 +100,10 @@
 
     <build>
         <plugins>
-            <!-- ProGuard -->
-            <plugin>
-                <groupId>com.github.wvengen</groupId>
-                <artifactId>proguard-maven-plugin</artifactId>
-                <version>${proguard-maven-plugin.version}</version>
-
-                <executions>
-                    <execution>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>proguard</goal>
-                        </goals>
-                    </execution>
-                </executions>
-
-                <configuration>
-                    <addMavenDescriptor>false</addMavenDescriptor>
-                    <options>
-                        <option>-verbose</option>
-
-                        <!-- JDK目标版本1.8 -->
-                        <option>-target 1.8</option>
-
-                        <!-- !!!For AspectJ!!! -->
-                        <!-- Keep the parameter names and types of methods -->
-                        <!-- <option>-keepparameternames</option> -->
-
-                        <option>-keepattributes SourceFile,LineNumberTable</option>
-                        <option>-keepattributes Signature</option>
-                        <option>-keepattributes *Annotation*,Signature</option>
-                        <option>-keepattributes Exceptions</option>
-                        <option>-keepattributes InnerClasses,EnclosingMethod</option>
-
-                        <option>-keep class net.benpl.r2dbc.R2dbc { *; }</option>
-                        <option>-keep class net.benpl.r2dbc.Type { *; }</option>
-                        <option>-keep class net.benpl.r2dbc.annotation.* { *; }</option>
-                        <option>-keep class net.benpl.r2dbc.exception.* { *; }</option>
-                        <option>-keepnames class net.benpl.r2dbc.support.Mysql</option>
-                        <option>-keepnames class net.benpl.r2dbc.support.Mssql</option>
-                        <option>-keepnames class net.benpl.r2dbc.support.H2</option>
-                        <option>-keepnames class net.benpl.r2dbc.support.Postgres</option>
-                    </options>
-                    <libs>
-                        <lib>${java.home}/lib/rt.jar</lib>
-                        <lib>${java.home}/lib/ext/jfxrt.jar</lib>
-                    </libs>
-                </configuration>
-
-                <dependencies>
-                    <dependency>
-                        <groupId>net.sf.proguard</groupId>
-                        <artifactId>proguard-base</artifactId>
-                        <version>${proguard-base.version}</version>
-                    </dependency>
-                </dependencies>
-            </plugin>
-
-            <!-- Source Code Packaging -->
+            <!-- attaches source -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-source-plugin</artifactId>
-                <version>${maven-source-plugin.version}</version>
                 <executions>
                     <execution>
                         <id>attach-sources</id>
@@ -139,6 +112,55 @@
                         </goals>
                     </execution>
                 </executions>
+            </plugin>
+
+            <!-- attaches javadoc -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>attach-javadocs</id>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <additionalOptions>
+                        <!-- disable the strict checking -->
+                        <additionalparam>-Xdoclint:none</additionalparam>
+                    </additionalOptions>
+                </configuration>
+            </plugin>
+
+            <!-- signs artifact -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-gpg-plugin</artifactId>
+                <version>1.6</version>
+                <executions>
+                    <execution>
+                        <id>sign-artifacts</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>sign</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- deploys the artifacts to OSSRH and releases them to the Central Repository -->
+            <plugin>
+                <groupId>org.sonatype.plugins</groupId>
+                <artifactId>nexus-staging-maven-plugin</artifactId>
+                <version>1.6.8</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <serverId>ossrh</serverId>
+                    <nexusUrl>https://oss.sonatype.org/</nexusUrl>
+                    <autoReleaseAfterClose>true</autoReleaseAfterClose>
+                </configuration>
             </plugin>
         </plugins>
     </build>

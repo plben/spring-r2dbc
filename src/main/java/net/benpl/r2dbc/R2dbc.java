@@ -1,3 +1,25 @@
+/*
+ * Copyright © 2019 Ben Peng
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the “Software”), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+
 package net.benpl.r2dbc;
 
 import lombok.NonNull;
@@ -68,7 +90,7 @@ public interface R2dbc {
      * Deletes the given entities.
      *
      * @param entities must not be {@literal null}.
-     * @return {@link Mono} how many entities have been deleted.
+     * @return {@link Mono} the number of entities deleted.
      */
     <T> Mono<Integer> deleteAll(List<T> entities);
 
@@ -82,15 +104,15 @@ public interface R2dbc {
     <T> Mono<Boolean> deleteById(Class<T> clazz, @NonNull Object id);
 
     /**
-     * Deletes the given entities.
+     * Deletes all entities.
      *
      * @param clazz the entity type.
-     * @return {@link Mono} how many entities have been deleted.
+     * @return {@link Mono} the number of entities deleted.
      */
     <T> Mono<Integer> deleteAll(Class<T> clazz);
 
     /**
-     * SELECT operation with given SQL and parameters.
+     * Performs SELECT operation with given SQL and parameters.
      *
      * @param clazz  the entity type.
      * @param sql    the SQL.
@@ -100,11 +122,11 @@ public interface R2dbc {
     <T> Flux<T> select(Class<T> clazz, String sql, Object... params);
 
     /**
-     * DELETE/UPDATE/...(update) operation with given SQL and parameters.
+     * Performs DELETE/UPDATE/...(update) operation with given SQL and parameters.
      *
      * @param sql    the SQL.
      * @param params the parameters. each parameter must not be {@literal null}
-     * @return {@link Mono} how many entities have been deleted.
+     * @return {@link Mono} the number of entities updated.
      */
     Mono<Integer> update(String sql, Object... params);
 

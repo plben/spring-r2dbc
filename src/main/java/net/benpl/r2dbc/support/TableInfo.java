@@ -1,54 +1,72 @@
+/*
+ * Copyright © 2019 Ben Peng
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the “Software”), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+
 package net.benpl.r2dbc.support;
 
 import lombok.NonNull;
 import net.benpl.r2dbc.annotation.*;
 import net.benpl.r2dbc.exception.R2dbcException;
-import org.springframework.util.StringUtils;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Stream;
 
+/**
+ * Detail information of class contains annotation {@link Table}.
+ */
 class TableInfo<T> {
 
     /**
-     * 表名：{@link Table#value()}
+     * Full name of this class.
      */
-    final String tableName;
     private final String className;
 
     /**
-     * 多主键
-     * 主键类：{@link IdClass#value()}
+     * Name of associated table. {@link Table#value()}
+     */
+    final String tableName;
+
+    /**
+     * Class of composite primary key. {@link IdClass#value()}
      */
     private final Class<?> idClass;
 
     /**
-     * 自增量主键字段
-     * 字段名： {@link Column#value()}
-     * 同时：具备 {@link Id} & {@link AutoIncrement}
-     */
-    String aiKey = null;
-    /**
-     * 自增量主键POJO成员
-     * 同时：具备 {@link Id} & {@link AutoIncrement}
+     * Primary key with AUTO_INCREMENT attribute. {@link Column#primary()} & {@link Column#autoIncrement()}
      */
     Field aiField = null;
 
     /**
-     * 所有包含 {@link Column} 的字段
+     * Columns of table. {@link Column}
      */
     final Map<String, Column> allColumns = new LinkedHashMap<>();
+
     /**
-     * 所有包含 {@link Column} 的字段，对应的POJO成员
+     * Column associated fields. {@link Column}
      */
     final Map<String, Field> allFields = new LinkedHashMap<>();
+
     /**
-     * 所有包含 {@link Id} 的字段名（主键名）
+     * Column names of primary key. {@link Column#primary()}
      */
     final List<String> allKeys = new ArrayList<>();
 
@@ -60,35 +78,30 @@ class TableInfo<T> {
             throw new R2dbcException(String.format("%s: annotation @Table not found.", className));
         }
 
-        if (!"TABLE".equals(table.type())) {
-            throw new R2dbcException(String.format("%s: is not TABLE.", className));
-        }
-
         this.tableName = table.value();
+
+        if (!"TABLE".equals(table.type())) {
+            throw new R2dbcException(String.format("%s: [%s] is not a TABLE.", className, tableName));
+        }
 
         this.idClass = clazz.isAnnotationPresent(IdClass.class) ? clazz.getAnnotation(IdClass.class).value() : null;
 
-        for (Field field : clazz.getDeclaredFields()) {
-            Column column = field.getAnnotation(Column.class);
+        Stream.of(clazz.getDeclaredFields())
+                .filter(field -> field.isAnnotationPresent(Column.class))
+                .forEach(field -> {
+                    Column column = field.getAnnotation(Column.class);
+                    String key = column.value();
 
-            if (column != null) {
-                String key = column.value();
-                boolean isKey = field.isAnnotationPresent(Id.class);
-                boolean isAI = field.isAnnotationPresent(AutoIncrement.class);
+                    allColumns.put(key, column);
+                    allFields.put(key, field);
 
-                this.allColumns.put(key, column);
-                this.allFields.put(key, field);
-
-                if (isKey) {
-                    if (isAI) {
-                        this.aiKey = key;
-                        this.aiField = field;
+                    if (column.primary()) {
+                        if (column.autoIncrement()) {
+                            aiField = field;
+                        }
+                        allKeys.add(key);
                     }
-
-                    this.allKeys.add(key);
-                }
-            }
-        }
+                });
     }
 
     static <T> TableInfo<T> of(T entity) {
@@ -103,83 +116,25 @@ class TableInfo<T> {
 
     boolean isKeyNull(T entity) {
         for (String key : allKeys) {
-            if (getFieldValue(entity, allFields.get(key)) == null) return true;
+            if (Utils.getFieldValue(entity, allFields.get(key)) == null) return true;
         }
         return false;
     }
 
-    Object aiValueFrom(Long id) {
+    Object aiValueFrom(Number id) {
         Class<?> classType = aiField.getType();
 
-        if (classType.equals(Short.class)) {
+        if (classType.equals(Byte.class)) {
+            return id.byteValue();
+        } else if (classType.equals(Short.class)) {
             return id.shortValue();
         } else if (classType.equals(Integer.class)) {
             return id.intValue();
         } else if (classType.equals(Long.class)) {
-            return id;
+            return id.longValue();
         } else {
-            throw new R2dbcException(String.format("%s.%s: invalid type %s. (Valid: Short/Integer/Long)", className, aiField.getName(), classType.getSimpleName()));
+            throw new R2dbcException(String.format("%s: field [%s] type %s invalid.", className, aiField.getName(), classType.getSimpleName()));
         }
-    }
-
-    Object getFieldValue(Object entity, Field field) {
-        Class<?> clazz = entity.getClass();
-        String className = clazz.getCanonicalName();
-        String fieldName = field.getName();
-
-        if (field.isAccessible()) {
-            try {
-                return field.get(entity);
-            } catch (IllegalAccessException e) {
-                throw new R2dbcException(String.format("%s: failed to get field [%s] value.", className, fieldName), e);
-            }
-        } else {
-            Method method;
-            String methodName = "get" + StringUtils.capitalize(fieldName);
-
-            try {
-                method = clazz.getMethod(methodName);
-            } catch (NoSuchMethodException e) {
-                throw new R2dbcException(String.format("%s: getter %s() not found.", className, methodName), e);
-            }
-
-            try {
-                return method.invoke(entity);
-            } catch (IllegalAccessException | InvocationTargetException e) {
-                throw new R2dbcException(String.format("%s: failed to invoke getter %s().", className, methodName), e);
-            }
-        }
-    }
-
-    <P> P setFieldValue(P entity, Field field, Object value) {
-        Class<?> clazz = entity.getClass();
-        String className = clazz.getCanonicalName();
-        String fieldName = field.getName();
-
-        if (field.isAccessible()) {
-            try {
-                field.set(entity, value);
-            } catch (IllegalAccessException e) {
-                throw new R2dbcException(String.format("%s: failed to set field [%s] value.", className, fieldName), e);
-            }
-        } else {
-            Method method;
-            String methodName = "set" + StringUtils.capitalize(fieldName);
-
-            try {
-                method = clazz.getDeclaredMethod(methodName, field.getType());
-            } catch (NoSuchMethodException e) {
-                throw new R2dbcException(String.format("%s: setter %s() not found.", className, methodName), e);
-            }
-
-            try {
-                method.invoke(entity, value);
-            } catch (IllegalAccessException | InvocationTargetException e) {
-                throw new R2dbcException(String.format("%s: failed to invoke setter %s().", className, methodName), e);
-            }
-        }
-
-        return entity;
     }
 
     Map<String, Object> getIdValues(@NonNull Object id) {
@@ -190,11 +145,20 @@ class TableInfo<T> {
                 throw new R2dbcException(String.format("%s: invalid primary key class %s. (Should be %s)", className, id.getClass().getCanonicalName(), idClass.getCanonicalName()));
             }
 
-            for (Field field : idClass.getDeclaredFields()) {
-                String key = field.getAnnotation(Column.class).value();
-                Object value = getFieldValue(id, field);
-                result.put(key, value);
-            }
+            Map<String, Field> fields = new HashMap<>();
+
+            Stream.of(idClass.getDeclaredFields())
+                    .filter(field -> field.isAnnotationPresent(Column.class))
+                    .forEach(field -> fields.put(field.getAnnotation(Column.class).value(), field));
+
+            allKeys.forEach(key -> {
+                Field field = fields.get(key);
+                if (field != null) {
+                    result.put(key, Utils.getFieldValue(id, field));
+                } else {
+                    throw new R2dbcException(String.format("%s: column [%s] not found in primary key class %s.", className, key, idClass.getCanonicalName()));
+                }
+            });
         } else {
             result.put(allKeys.get(0), id);
         }
