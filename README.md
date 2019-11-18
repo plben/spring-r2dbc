@@ -130,7 +130,7 @@ public class R2dbcConfigure extends AbstractR2dbcConfiguration {
 
 ### 2. Table Entity
 
-Entity without composite primary key:
+- Entity without composite primary key:
 
 ```java
 @Data
@@ -153,7 +153,7 @@ public class TSysUser {
 }
 ```
 
-Entity with composite primary key:
+- Entity with composite primary key:
 
 ```java
 @Data
@@ -168,7 +168,7 @@ public class TSysUserRole {
 }
 ```
 
-The composite primary key:
+- The composite primary key:
 
 ```java
 @Data
@@ -256,5 +256,7 @@ Take [r2dbc-mysql](https://github.com/mirromutth/r2dbc-mysql) for example:
 JetBrains IDEA:
 
 File -> Settings -> Editor -> Language Injections -> + -> 7.Java Parameter -> ID: MySQL/H2/PostgreSQL/SQL -> Class Methods: net.benpl.r2dbc.R2dbc -> Check all 3 CheckBoxs -> OK -> OK.
+
+*Certainly, you need to setup a datasource in the meantime.*
 
 Other IDEs should have the similar setting.

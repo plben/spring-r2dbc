@@ -1,4 +1,6 @@
 /*
+ * MIT License
+ *
  * Copyright © 2019 Ben Peng
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -35,6 +37,7 @@ import reactor.core.publisher.Mono;
 
 import java.lang.reflect.Field;
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -61,27 +64,69 @@ abstract class Abstract implements R2dbc {
                 .first();
     }
 
+    /**
+     * 1.1: different implementations for cases of No Primary Key, Single Primary Key and Composite Primary Key.
+     */
     @Override
     public <T> Mono<T> save(@NonNull T entity) {
         TableInfo<T> tableInfo = TableInfo.of(entity);
 
-        if (tableInfo.isKeyNull(entity)) {
-            if (tableInfo.aiField != null) {
-                return insertSpec(tableInfo, entity)
-                        .map(row -> {
-                            Object value = tableInfo.aiValueFrom((Number) row.get(0));
-                            Utils.setFieldValue(entity, tableInfo.aiField, value);
-                            return entity;
-                        })
-                        .first();
-            } else {
-                throw new R2dbcException("Table [" + tableInfo.tableName + "]: failed to save record. (primary key is NULL)");
-            }
-        } else {
-            return updateSpec(tableInfo, entity)
+        if (tableInfo.allKeys.isEmpty()) {
+            // No primary key.
+            return insertSpec(tableInfo, entity)
                     .fetch()
                     .rowsUpdated()
-                    .map(count -> entity);
+                    .thenReturn(entity);
+        } else {
+            if (tableInfo.isKeyNull(entity)) {
+                // Primary key is NULL
+                if (tableInfo.aiField != null) {
+                    // Primary key is NULL, and AUTO_INCREMENT
+                    return insertSpec(tableInfo, entity)
+                            .map(row -> {
+                                Object value = tableInfo.aiValueFrom((Number) row.get(0));
+                                Utils.setFieldValue(entity, tableInfo.aiField, value);
+                                return entity;
+                            })
+                            .first();
+                } else {
+                    // Primary key is NULL, but NOT AUTO_INCREMENT
+                    throw new R2dbcException("Table [" + tableInfo.tableName + "]: failed to save record. (primary key is NULL)");
+                }
+            } else {
+                // Primary key is not NULL
+                @SuppressWarnings("unchecked")
+                Class<T> clazz = (Class<T>) entity.getClass();
+                Object id = tableInfo.getId(entity);
+
+                return existsById(clazz, id)
+                        .flatMap((Function<Boolean, Mono<T>>) exists -> {
+                            if (exists) {
+                                // Primary key is not NULL, and record exists.
+                                return updateSpec(tableInfo, entity)
+                                        .fetch()
+                                        .rowsUpdated()
+                                        .thenReturn(entity);
+                            } else {
+                                // Primary key is not NULL, and record NOT exists.
+                                if (tableInfo.aiField != null) {
+                                    return insertSpec(tableInfo, entity)
+                                            .map(row -> {
+                                                Object value = tableInfo.aiValueFrom((Number) row.get(0));
+                                                Utils.setFieldValue(entity, tableInfo.aiField, value);
+                                                return entity;
+                                            })
+                                            .first();
+                                } else {
+                                    return insertSpec(tableInfo, entity)
+                                            .fetch()
+                                            .rowsUpdated()
+                                            .thenReturn(entity);
+                                }
+                            }
+                        })
+                        .single();
+            }
         }
     }
 
@@ -109,26 +154,22 @@ abstract class Abstract implements R2dbc {
         Map<String, Field> allFields = tableInfo.allFields;
 
         String clauseStr;
-        List<Object> params;
+        List<Pair<? extends Class<?>, Object>> params;
 
-        if (keys.size() > 0) {
-            // (x = ? AND y = ? , ...)
-            clauseStr = keys.stream()
-                    .map(key -> "`" + key + "` = ?")
-                    .collect(Collectors.joining(" AND "));
-            params = keys.stream()
-                    .map(key -> Utils.getFieldValue(entity, allFields.get(key)))
-                    .collect(Collectors.toList());
-        } else {
+        if (keys.isEmpty()) {
             keys = allFields.keySet();
-            // (x = ? AND y = ? , ...)
-            clauseStr = keys.stream()
-                    .map(key -> "`" + key + "` = ?")
-                    .collect(Collectors.joining(" AND "));
-            params = keys.stream()
-                    .map(key -> Utils.getFieldValue(entity, allFields.get(key)))
-                    .collect(Collectors.toList());
         }
+
+        // (x = ? AND y = ? , ...)
+        clauseStr = keys.stream()
+                .map(key -> "`" + key + "` = ?")
+                .collect(Collectors.joining(" AND "));
+        params = keys.stream()
+                .map(key -> {
+                    Field field = allFields.get(key);
+                    return new Pair<>(field.getType(), Utils.getFieldValue(entity, field));
+                })
+                .collect(Collectors.toList());
 
         String sql = "DELETE FROM `" + tableInfo.tableName + "` WHERE " + clauseStr;
 
@@ -146,9 +187,10 @@ abstract class Abstract implements R2dbc {
         Map<String, Field> allFields = tableInfo.allFields;
 
         String clauseStr;
-        List<Object> params;
+        List<Pair<? extends Class<?>, Object>> params;
 
-        if (allKeys.size() == 0) {
+        if (allKeys.isEmpty()) {
+            // No primary key.
             // (x = ? AND y = ? , ...)
             String valueStr = allFields.keySet().stream()
                     .map(key -> "`" + key + "` = ?")
@@ -157,17 +199,23 @@ abstract class Abstract implements R2dbc {
             clauseStr = String.join(" OR ", Collections.nCopies(entities.size(), valueStr));
             params = entities.stream()
                     .flatMap(entity -> allFields.keySet().stream()
-                            .map(key -> Utils.getFieldValue(entity, allFields.get(key)))
-                            .collect(Collectors.toList())
-                            .stream())
+                            .map(key -> {
+                                Field field = allFields.get(key);
+                                return new Pair<>(field.getType(), Utils.getFieldValue(entity, field));
+                            }))
                     .collect(Collectors.toList());
         } else if (allKeys.size() == 1) {
+            // Single primary key.
             String key = allKeys.get(0);
-            clauseStr = key + " IN (" + String.join(", ", Collections.nCopies(entities.size(), "?")) + ")";
+            clauseStr = "`" + key + "` IN (" + String.join(", ", Collections.nCopies(entities.size(), "?")) + ")";
             params = entities.stream()
-                    .map(entity -> Utils.getFieldValue(entity, allFields.get(key)))
+                    .map(entity -> {
+                        Field field = allFields.get(key);
+                        return new Pair<>(field.getType(), Utils.getFieldValue(entity, field));
+                    })
                     .collect(Collectors.toList());
         } else {
+            // Compite primary key.
             // (x = ? AND y = ? , ...)
             String valueStr = allKeys.stream()
                     .map(key -> "`" + key + "` = ?")
@@ -176,9 +224,10 @@ abstract class Abstract implements R2dbc {
             clauseStr = String.join(" OR ", Collections.nCopies(entities.size(), valueStr));
             params = entities.stream()
                     .flatMap(entity -> allKeys.stream()
-                            .map(key -> Utils.getFieldValue(entity, allFields.get(key)))
-                            .collect(Collectors.toList())
-                            .stream())
+                            .map(key -> {
+                                Field field = allFields.get(key);
+                                return new Pair<>(field.getType(), Utils.getFieldValue(entity, field));
+                            }))
                     .collect(Collectors.toList());
         }
 
@@ -259,22 +308,24 @@ abstract class Abstract implements R2dbc {
     }
 
     /**
-     * @param params 成员不可以为NULL
+     * @param params each parameter MUST NOT be null
      */
     DatabaseClient.GenericExecuteSpec execute0(String sql, Object... params) {
-        List<Pair<Class<?>, Object>> pairs = Stream.of(params).map(param -> new Pair<Class<?>, Object>(param.getClass(), param)).collect(Collectors.toList());
+        List<Pair<? extends Class<?>, Object>> pairs = Stream.of(params).map(param -> new Pair<>(param.getClass(), param)).collect(Collectors.toList());
+        return execute0(sql, pairs);
+    }
 
+    /**
+     * Since 1.1.
+     */
+    private DatabaseClient.GenericExecuteSpec execute0(String sql, List<Pair<? extends Class<?>, Object>> params) {
         DatabaseClient.GenericExecuteSpec execute = databaseClient.execute(sql);
 
-        for (int i = 0; i < pairs.size(); i++) {
-            Pair<Class<?>, Object> pair = pairs.get(i);
+        for (int i = 0; i < params.size(); i++) {
+            Pair<? extends Class<?>, Object> pair = params.get(i);
             Object value = pair.getValue();
 
-            if (value == null) {
-                execute = execute.bindNull(i, pair.getKey());
-            } else {
-                execute = execute.bind(i, value);
-            }
+            execute = (value == null) ? execute.bindNull(i, pair.getKey()) : execute.bind(i, value);
         }
 
         return execute;
@@ -304,28 +355,28 @@ abstract class Abstract implements R2dbc {
         return insertSpec;
     }
 
+    /**
+     * 1.1: Supports NULL in criteria.
+     */
     <T> DatabaseClient.UpdateSpec updateSpec(TableInfo<T> tableInfo, T entity) {
         Update update = null;
 
-        // 不包括主键的其它字段
         List<String> nonKeys = tableInfo.allFields.keySet().stream().filter(s -> !tableInfo.allKeys.contains(s)).collect(Collectors.toList());
 
         for (String key : nonKeys) {
-            Field field = tableInfo.allFields.get(key);
-            Object value = Utils.getFieldValue(entity, field);
-
-            if (value == null) {
-                update = (update == null) ? Update.update(key, null) : update.set(key, null);
-            } else {
-                update = (update == null) ? Update.update(key, value) : update.set(key, value);
-            }
+            Object value = Utils.getFieldValue(entity, tableInfo.allFields.get(key));
+            update = (update == null) ? Update.update(key, value) : update.set(key, value);
         }
 
         Criteria criteria = null;
 
         for (String key : tableInfo.allKeys) {
             Object value = Utils.getFieldValue(entity, tableInfo.allFields.get(key));
-            criteria = criteria == null ? Criteria.where(key).is(value) : criteria.and(key).is(value);
+            if (value == null) {
+                criteria = criteria == null ? Criteria.where(key).isNull() : criteria.and(key).isNull();
+            } else {
+                criteria = criteria == null ? Criteria.where(key).is(value) : criteria.and(key).is(value);
+            }
         }
 
         assert update != null;

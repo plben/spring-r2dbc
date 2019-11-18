@@ -1,4 +1,6 @@
 /*
+ * MIT License
+ *
  * Copyright © 2019 Ben Peng
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -23,7 +25,9 @@
 package net.benpl.r2dbc.support;
 
 import lombok.NonNull;
-import net.benpl.r2dbc.annotation.*;
+import net.benpl.r2dbc.annotation.Column;
+import net.benpl.r2dbc.annotation.IdClass;
+import net.benpl.r2dbc.annotation.Table;
 import net.benpl.r2dbc.exception.R2dbcException;
 
 import java.lang.reflect.Field;
@@ -114,11 +118,14 @@ class TableInfo<T> {
         return new TableInfo<>(clazz);
     }
 
+    /**
+     * @return 1.1: returns TRUE only when all keys are NULL, otherwise FALSE.
+     */
     boolean isKeyNull(T entity) {
         for (String key : allKeys) {
-            if (Utils.getFieldValue(entity, allFields.get(key)) == null) return true;
+            if (Utils.getFieldValue(entity, allFields.get(key)) != null) return false;
         }
-        return false;
+        return true;
     }
 
     Object aiValueFrom(Number id) {
@@ -164,6 +171,41 @@ class TableInfo<T> {
         }
 
         return result;
+    }
+
+    /**
+     * Since 1.1.
+     */
+    Object getId(@NonNull Object entity) {
+        if (allKeys.isEmpty()) {
+            // No primary key.
+            return null;
+        } else if (idClass == null) {
+            // Single primary key.
+            Field field = allFields.get(allKeys.get(0));
+            return Utils.getFieldValue(entity, field);
+        } else {
+            // Composite primary key.
+            Map<String, Field> idFields = new HashMap<>();
+
+            Stream.of(idClass.getDeclaredFields())
+                    .filter(field -> field.isAnnotationPresent(Column.class))
+                    .forEach(field -> idFields.put(field.getAnnotation(Column.class).value(), field));
+
+            try {
+                Object idInstance = idClass.newInstance();
+
+                allKeys.forEach(key -> {
+                    Field field = allFields.get(key);
+                    Object value = Utils.getFieldValue(entity, field);
+                    Utils.setFieldValue(idInstance, idFields.get(key), value);
+                });
+
+                return idInstance;
+            } catch (InstantiationException | IllegalAccessException e) {
+                throw new R2dbcException(String.format("%s: failed to invoke newInstance() of primary key class %s.", className, idClass.getCanonicalName()), e);
+            }
+        }
     }
 
 }
