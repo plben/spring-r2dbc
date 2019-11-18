@@ -71,7 +71,7 @@ Dependency of this git:
 <dependency>
     <groupId>net.benpl</groupId>
     <artifactId>spring-r2dbc</artifactId>
-    <version>1.0</version>
+    <version>1.1</version>
 </dependency>
 ```
 
